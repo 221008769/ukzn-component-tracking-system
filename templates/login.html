@@ -1,0 +1,81 @@
+@author: Kiara Chetty
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Login</title>
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}">
+
+    <!-- Custom App Styling -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <!-- Hide Carousel Controls -->
+    <style>
+        .carousel-control-prev,
+        .carousel-control-next {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container mt-4">
+
+    <!-- UKZN Logo -->
+    <img src="{{ url_for('static', filename='images/ukzn_logo.png') }}"
+         alt="UKZN Logo"
+         class="ukzn-logo">
+
+    <h2 class="mb-4 text-center">Components</h2>
+
+    <!-- Carousel -->
+    <div id="componentCarousel" class="carousel slide mb-5" data-ride="carousel" data-interval="4000">
+      <div class="carousel-inner">
+        {% for type_name, comps in groups.items() %}
+        <div class="carousel-item {% if loop.first %}active{% endif %}">
+          <h5 class="mb-3 text-center">{{ type_name }}</h5>
+          <div class="d-flex flex-wrap gap-3 justify-content-center">
+            {% for comp in comps %}
+              <div class="card" style="width: 150px;">
+                <img src="{{ url_for('static', filename='images/' + comp['image']) }}"
+                     class="card-img-top"
+                     alt="{{ comp['name'] }}" />
+                <div class="card-body p-2">
+                  <p class="card-text text-center small">{{ comp['name'] }}</p>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Error Message -->
+    {% if error %}
+    <div class="alert alert-danger text-center">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- Login Form -->
+    <form method="POST" class="w-50 mx-auto">
+      <div class="mb-3">
+        <input type="text" name="name" class="form-control" placeholder="Enter Name" required />
+      </div>
+      <div class="mb-3">
+        <input type="text" name="student_number" class="form-control" placeholder="Student Number" required />
+      </div>
+      <button type="submit" class="btn btn-primary w-100">Login</button>
+    </form>
+
+</div>
+
+<script src="{{ url_for('static', filename='bootstrap/js/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+
+</body>
+</html>

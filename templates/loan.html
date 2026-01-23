@@ -1,0 +1,81 @@
+@author: Kiara Chetty
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Loan Component</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="container mt-4">
+
+  <!-- UKZN Logo -->
+  <img src="{{ url_for('static', filename='images/ukzn_logo.png') }}"
+       alt="UKZN Logo"
+       class="ukzn-logo">
+
+  <h2 class="mb-3">Loan a Component</h2>
+
+  <form method="POST" class="mb-4">
+    <div class="input-group">
+      <select name="item" class="form-select" required>
+        <option value="">Select Item</option>
+        <option value="PIC Kit 4 Starter Kit">PIC Kit 4 Starter Kit</option>
+        <option value="Electronic Robotic Vehicle">Electronic Robotic Vehicle</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Loan</button>
+    </div>
+  </form>
+
+  <h4>Your Loans</h4>
+  <table class="table table-bordered">
+    <thead class="table-light">
+      <tr>
+        <th>Item</th>
+        <th>Loan Date</th>
+        <th>Status</th>
+        <th>Return</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for loan in loans %}
+      <tr>
+        <td>{{ loan['item'] }}</td>
+        <td>{{ loan['loan_date'] }}</td>
+        <td>
+          {% if loan['returned'] %}
+            Returned on {{ loan['return_date'] }}
+          {% else %}
+            Not Returned
+          {% endif %}
+        </td>
+        <td>
+          {% if not loan['returned'] %}
+          <a href="{{ url_for('return_loan', loan_id=loan['id']) }}"
+             class="btn btn-success btn-sm">
+             Mark Returned
+          </a>
+          {% else %}
+          <span class="text-muted">✓</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-center">No loans found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <a href="{{ url_for('home') }}" class="btn btn-secondary mt-3">Back</a>
+
+</div>
+
+<script src="{{ url_for('static', filename='bootstrap/js/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+
+</body>
+</html>

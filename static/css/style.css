@@ -1,0 +1,89 @@
+
+/* Page background */
+body {
+    background-color: #0b3c74;   /* UKZN blue */
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+}
+
+/* Main content container */
+.container {
+    background-color: #ffffff;
+    border-radius: 10px;
+    padding: 25px;
+}
+
+/* UKZN Logo */
+.ukzn-logo {
+    display: block;
+    margin: 0 auto 20px auto;
+    max-height: 90px;
+}
+
+/* Headings */
+h2, h4, h5 {
+    color: #0b3c74;
+    font-weight: 600;
+}
+
+/* Primary buttons */
+.btn-primary {
+    background-color: #0b3c74;
+    border-color: #0b3c74;
+}
+
+.btn-primary:hover {
+    background-color: #092f5a;
+    border-color: #092f5a;
+}
+
+/* Outline buttons consistency */
+.btn-outline-primary {
+    color: #0b3c74;
+    border-color: #0b3c74;
+}
+
+.btn-outline-primary:hover {
+    background-color: #0b3c74;
+    color: #ffffff;
+}
+
+/* Tables */
+.table thead {
+    background-color: #0b3c74;
+    color: #ffffff;
+}
+
+/* Cards */
+.card {
+    border-radius: 8px;
+}
+
+/* Carousel cards */
+.carousel-item h5 {
+    color: #0b3c74;
+}
+
+/* Alerts */
+.alert-danger {
+    border-radius: 6px;
+}
+
+/* Inputs focus */
+.form-control:focus,
+.form-select:focus {
+    border-color: #0b3c74;
+    box-shadow: 0 0 0 0.2rem rgba(11, 60, 116, 0.25);
+}
+
+/* Responsive tweaks */
+@media (max-width: 768px) {
+    .container {
+        padding: 15px;
+    }
+
+    .ukzn-logo {
+        max-height: 70px;
+    }
+}
