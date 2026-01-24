@@ -1,5 +1,30 @@
+# Python cache files
 __pycache__/
 *.pyc
-.spyderproject
-.spyproject
-.env
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Database or sensitive files
+*.db
+*.sqlite3
+*.env
+App.pyw  # optional: hide if contains credentials
+init_db.py  # optional: contains passwords
+
+# PyInstaller builds
+dist/
+build/
+*.exe
+
+# IDE files
+*.vscode/
+*.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
