@@ -61,6 +61,13 @@
     </div>
     {% endif %}
 
+    <!-- Logout due to inactivity message -->
+    {% if logout_msg %}
+    <div class="alert alert-warning text-center">
+        You were logged out due to inactivity.
+    </div>
+    {% endif %}
+
     <!-- Login Form -->
     <form method="POST" class="w-50 mx-auto">
       <div class="mb-3">

@@ -77,5 +77,24 @@
 <script src="{{ url_for('static', filename='bootstrap/js/jquery.min.js') }}"></script>
 <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 
+<!-- Auto-logout script -->
+<script>
+    let logoutTimer;
+
+    function resetLogoutTimer() {
+        clearTimeout(logoutTimer);
+        logoutTimer = setTimeout(() => {
+            alert("You have been logged out due to inactivity.");
+            window.location.href = "{{ url_for('logout') }}";
+        }, 180000); // 3 minutes
+    }
+
+    document.addEventListener('mousemove', resetLogoutTimer);
+    document.addEventListener('keydown', resetLogoutTimer);
+    document.addEventListener('click', resetLogoutTimer);
+
+    resetLogoutTimer();
+</script>
+
 </body>
 </html>

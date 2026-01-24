@@ -9,6 +9,8 @@ from pymysql.cursors import DictCursor
 from datetime import datetime
 import os
 import sys
+import threading
+import time
 
 # EMAIL IMPORTS
 import smtplib
@@ -19,7 +21,7 @@ from email.message import EmailMessage
 # =========================
 def resource_path(relative_path):
     try:
-        base_path = sys._MEIPASS  # PyInstaller temp folder
+        base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
@@ -28,8 +30,7 @@ template_dir = resource_path("templates")
 static_dir = resource_path("static")
 
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
-app.secret_key = "secret_key"  # change for production
-
+app.secret_key = "secret_key"
 
 # =========================
 # EMAIL CONFIGURATION
@@ -38,7 +39,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 EMAIL_SENDER = "ukzn.component@gmail.com"
-EMAIL_PASSWORD = ""
+EMAIL_PASSWORD = "bmns yfhh qkwl pnbj"
 EMAIL_ADMIN = "221008769@stu.ukzn.ac.za"
 
 # =========================
@@ -79,6 +80,93 @@ def send_admin_email(subject, body):
         print("Email error:", e)
 
 # =========================
+# DAILY EMAIL SCHEDULER
+# =========================
+def send_daily_summary():
+    while True:
+        now = datetime.now()
+
+        if now.hour == 16 and now.minute == 0:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                today = now.strftime("%Y-%m-%d")
+
+                # COMPONENTS TAKEN
+                cursor.execute("""
+                    SELECT u.name, u.student_number, c.name AS component, l.quantity, l.timestamp
+                    FROM logs l
+                    JOIN users u ON l.user_id = u.id
+                    JOIN components c ON l.component_id = c.id
+                    WHERE DATE(l.timestamp)=%s AND l.emailed=0
+                """, (today,))
+                logs = cursor.fetchall()
+
+                if logs:
+                    body = "COMPONENTS TAKEN TODAY\n\n"
+                    for log in logs:
+                        body += (
+                            f"Name: {log['name']}\n"
+                            f"Student Number: {log['student_number']}\n"
+                            f"Component: {log['component']}\n"
+                            f"Quantity: {log['quantity']}\n"
+                            f"Time: {log['timestamp']}\n\n"
+                        )
+                    send_admin_email("Daily Component Summary", body)
+                    cursor.execute("UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s", (today,))
+
+                # ITEMS LOANED
+                cursor.execute("""
+                    SELECT u.name, u.student_number, lo.item, lo.loan_date
+                    FROM loans lo
+                    JOIN users u ON lo.user_id = u.id
+                    WHERE DATE(lo.loan_date)=%s AND lo.loan_emailed=0
+                """, (today,))
+                loans = cursor.fetchall()
+
+                if loans:
+                    body = "ITEMS LOANED TODAY\n\n"
+                    for loan in loans:
+                        body += (
+                            f"Name: {loan['name']}\n"
+                            f"Student Number: {loan['student_number']}\n"
+                            f"Item: {loan['item']}\n"
+                            f"Loan Date: {loan['loan_date']}\n\n"
+                        )
+                    send_admin_email("Daily Loan Summary", body)
+                    cursor.execute("UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s", (today,))
+
+                # ITEMS RETURNED
+                cursor.execute("""
+                    SELECT u.name, u.student_number, lo.item, lo.return_date
+                    FROM loans lo
+                    JOIN users u ON lo.user_id = u.id
+                    WHERE DATE(lo.return_date)=%s AND lo.returned=1 AND lo.return_emailed=0
+                """, (today,))
+                returns = cursor.fetchall()
+
+                if returns:
+                    body = "ITEMS RETURNED TODAY\n\n"
+                    for r in returns:
+                        body += (
+                            f"Name: {r['name']}\n"
+                            f"Student Number: {r['student_number']}\n"
+                            f"Item: {r['item']}\n"
+                            f"Return Date: {r['return_date']}\n\n"
+                        )
+                    send_admin_email("Daily Return Summary", body)
+                    cursor.execute("UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s", (today,))
+
+                conn.commit()
+                conn.close()
+                time.sleep(60)
+
+            except Exception as e:
+                print("Scheduler error:", e)
+
+        time.sleep(20)
+
+# =========================
 # LOGIN
 # =========================
 @app.route("/", methods=["GET", "POST"])
@@ -95,6 +183,7 @@ def login():
         groups.setdefault(key, []).append(comp)
 
     error = None
+    logout_msg = request.args.get("logout_msg", "")
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
@@ -117,7 +206,7 @@ def login():
         else:
             role = "admin" if student_number == "000000000" else "student"
             cursor.execute(
-                "INSERT INTO users (name, student_number, role) VALUES (%s, %s, %s)",
+                "INSERT INTO users (name, student_number, role) VALUES (%s,%s,%s)",
                 (name or "Unknown", student_number, role)
             )
             conn.commit()
@@ -130,11 +219,10 @@ def login():
         session["student_number"] = student_number
         session["role"] = role
 
-
         return redirect(url_for("admin" if role == "admin" else "home"))
 
     conn.close()
-    return render_template("login.html", groups=groups, error=error)
+    return render_template("login.html", groups=groups, error=error, logout_msg=logout_msg)
 
 # =========================
 # HOME
@@ -187,16 +275,6 @@ def log():
     conn.commit()
     conn.close()
 
-    send_admin_email(
-        "Component Taken",
-        f"""
-Student Name: {session['name']}
-Student Number: {session['student_number']}
-Component: {component['name']}
-Quantity: {quantity}
-Date & Time: {timestamp}
-"""
-    )
 
     return redirect(url_for("home"))
 
@@ -221,16 +299,7 @@ def loan():
         )
         conn.commit()
 
-        send_admin_email(
-            "Item Loaned",
-            f"""
-Student Name: {session['name']}
-Student Number: {session['student_number']}
-Item: {item}
-Loan Date: {now}
-"""
-        )
-
+     
     cursor.execute("SELECT * FROM loans WHERE user_id=%s", (session["user_id"],))
     loans = cursor.fetchall()
 
@@ -256,16 +325,6 @@ def return_loan(loan_id):
     )
     conn.commit()
     conn.close()
-
-    send_admin_email(
-        "Item Returned",
-        f"""
-Student Name: {session['name']}
-Student Number: {session['student_number']}
-Item: {loan['item']}
-Return Date: {return_time}
-"""
-    )
 
     return redirect(url_for("loan"))
 
@@ -300,13 +359,15 @@ def admin():
     conn.close()
     return render_template("admin.html", logs=logs, loan_logs=loan_logs)
 
+
 # =========================
 # LOGOUT
 # =========================
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    # Redirect to login page with inactivity message
+    return redirect(url_for("login", logout_msg=1))
 
 # =========================
 # DATASHEETS
@@ -319,4 +380,5 @@ def datasheet(filename):
 # RUN
 # =========================
 if __name__ == "__main__":
+    threading.Thread(target=send_daily_summary, daemon=True).start()
     app.run(host="0.0.0.0", port=5000)
