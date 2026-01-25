@@ -1,5 +1,9 @@
 @author: Kiara Chetty
 
+<!--
+@author: Kiara Chetty
+-->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -54,15 +58,15 @@
       </div>
     </div>
 
-    <!-- Error Message -->
+    <!-- ERROR MESSAGE (OFFLINE / DB / VALIDATION) -->
     {% if error %}
     <div class="alert alert-danger text-center">
         {{ error }}
     </div>
     {% endif %}
 
-    <!-- Logout due to inactivity message -->
-    {% if logout_msg %}
+    <!-- LOGOUT DUE TO INACTIVITY MESSAGE ONLY -->
+    {% if logout_msg == "inactivity" %}
     <div class="alert alert-warning text-center">
         You were logged out due to inactivity.
     </div>

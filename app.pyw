@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 import time
+import socket
 
 # EMAIL IMPORTS
 import smtplib
@@ -59,6 +60,16 @@ def get_db_connection():
         port=3306,
         cursorclass=DictCursor
     )
+
+# =========================
+# NETWORK CHECK
+# =========================
+def is_online():
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=2)
+        return True
+    except OSError:
+        return False
 
 # =========================
 # EMAIL FUNCTION
@@ -171,8 +182,21 @@ def send_daily_summary():
 # =========================
 @app.route("/", methods=["GET", "POST"])
 def login():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    error = None
+    logout_msg = request.args.get("logout_msg", "")
+
+    # OFFLINE CHECK
+    if not is_online():
+        error = "System is offline. Please check your internet connection."
+        return render_template("login.html", groups={}, error=error, logout_msg=logout_msg)
+
+    # DATABASE CHECK
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+    except Exception:
+        error = "Database is currently unavailable."
+        return render_template("login.html", groups={}, error=error, logout_msg=logout_msg)
 
     cursor.execute("SELECT * FROM components ORDER BY type, name")
     components = cursor.fetchall()
@@ -182,9 +206,6 @@ def login():
         key = comp["type"] or "Other"
         groups.setdefault(key, []).append(comp)
 
-    error = None
-    logout_msg = request.args.get("logout_msg", "")
-
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         student_number = request.form.get("student_number", "").strip()
@@ -192,9 +213,9 @@ def login():
         if not (student_number.isdigit() and len(student_number) == 9) and student_number != "000000000":
             conn.close()
             error = "Student number must be exactly 9 digits (or the admin ID)."
-            return render_template("login.html", groups=groups, error=error)
+            return render_template("login.html", groups=groups, error=error, logout_msg=logout_msg)
 
-        cursor.execute("SELECT * FROM users WHERE student_number = %s", (student_number,))
+        cursor.execute("SELECT * FROM users WHERE student_number=%s", (student_number,))
         user = cursor.fetchone()
 
         if user:
@@ -265,16 +286,12 @@ def log():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT name FROM components WHERE id=%s", (component_id,))
-    component = cursor.fetchone()
-
     cursor.execute(
         "INSERT INTO logs (user_id, component_id, quantity, timestamp) VALUES (%s,%s,%s,%s)",
         (session["user_id"], component_id, quantity, timestamp)
     )
     conn.commit()
     conn.close()
-
 
     return redirect(url_for("home"))
 
@@ -299,7 +316,6 @@ def loan():
         )
         conn.commit()
 
-     
     cursor.execute("SELECT * FROM loans WHERE user_id=%s", (session["user_id"],))
     loans = cursor.fetchall()
 
@@ -313,9 +329,6 @@ def loan():
 def return_loan(loan_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    cursor.execute("SELECT item FROM loans WHERE id=%s", (loan_id,))
-    loan = cursor.fetchone()
 
     return_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -336,29 +349,50 @@ def admin():
     if session.get("role") != "admin":
         return redirect(url_for("login"))
 
+    search = request.args.get("search", "").strip()
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT u.name, u.student_number, c.name AS component_name, l.quantity, l.timestamp
-        FROM logs l
-        JOIN users u ON l.user_id = u.id
-        JOIN components c ON l.component_id = c.id
-        ORDER BY l.timestamp DESC
-    """)
+    if search:
+        cursor.execute("""
+            SELECT u.name, u.student_number, c.name AS component_name, l.quantity, l.timestamp
+            FROM logs l
+            JOIN users u ON l.user_id=u.id
+            JOIN components c ON l.component_id=c.id
+            WHERE u.student_number LIKE %s OR u.name LIKE %s
+            ORDER BY l.timestamp DESC
+        """, (f"%{search}%", f"%{search}%"))
+    else:
+        cursor.execute("""
+            SELECT u.name, u.student_number, c.name AS component_name, l.quantity, l.timestamp
+            FROM logs l
+            JOIN users u ON l.user_id=u.id
+            JOIN components c ON l.component_id=c.id
+            ORDER BY l.timestamp DESC
+        """)
+
     logs = cursor.fetchall()
 
-    cursor.execute("""
-        SELECT u.name, u.student_number, lo.item, lo.loan_date, lo.returned, lo.return_date
-        FROM loans lo
-        JOIN users u ON lo.user_id = u.id
-        ORDER BY lo.loan_date DESC
-    """)
+    if search:
+        cursor.execute("""
+            SELECT u.name, u.student_number, lo.item, lo.loan_date, lo.returned, lo.return_date
+            FROM loans lo
+            JOIN users u ON lo.user_id=u.id
+            WHERE u.student_number LIKE %s OR u.name LIKE %s
+            ORDER BY lo.loan_date DESC
+        """, (f"%{search}%", f"%{search}%"))
+    else:
+        cursor.execute("""
+            SELECT u.name, u.student_number, lo.item, lo.loan_date, lo.returned, lo.return_date
+            FROM loans lo
+            JOIN users u ON lo.user_id=u.id
+            ORDER BY lo.loan_date DESC
+        """)
+
     loan_logs = cursor.fetchall()
-
     conn.close()
-    return render_template("admin.html", logs=logs, loan_logs=loan_logs)
 
+    return render_template("admin.html", logs=logs, loan_logs=loan_logs, search=search)
 
 # =========================
 # LOGOUT
@@ -366,8 +400,12 @@ def admin():
 @app.route("/logout")
 def logout():
     session.clear()
-    # Redirect to login page with inactivity message
-    return redirect(url_for("login", logout_msg=1))
+    return redirect(url_for("login", logout_msg="manual"))
+
+@app.route("/auto_logout")
+def auto_logout():
+    session.clear()
+    return redirect(url_for("login", logout_msg="inactivity"))
 
 # =========================
 # DATASHEETS
