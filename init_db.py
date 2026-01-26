@@ -3,15 +3,19 @@ import mysql.connector
 # -------------------------------
 # MySQL connection
 # -------------------------------
-DB_HOST = '192.168.1.14'      # Replace with your PC LAN IP
-DB_USER = 'kiosk_user'        # MySQL user
-DB_PASSWORD = 'Components'    # MySQL password
-DB_NAME = 'component_db'
+DB_HOST = "yamanote.proxy.rlwy.net"
+DB_PORT = 24758
+DB_USER = "root"
+DB_PASSWORD = "RZFfquliRXFDmZAdNsFMUXTsKqlAJHym"
+DB_NAME = "railway"
+
 
 conn = mysql.connector.connect(
     host=DB_HOST,
     user=DB_USER,
-    password=DB_PASSWORD
+    password=DB_PASSWORD,
+    database=DB_NAME,
+    port=DB_PORT
 )
 
 cursor = conn.cursor()
