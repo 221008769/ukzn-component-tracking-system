@@ -53,14 +53,15 @@ DB_PASSWORD = os.environ.get("MYSQL_PASSWORD")
 DB_NAME = os.environ.get("MYSQL_DATABASE")
 DB_PORT = int(os.environ.get("MYSQL_PORT", 3306))
 
-conn = pymysql.connect(
-    host=DB_HOST,
-    user=DB_USER,
-    password=DB_PASSWORD,
-    database=DB_NAME,
-    port=DB_PORT,
-    cursorclass=pymysql.cursors.DictCursor
-)
+def get_db_connection():
+    return pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT,
+        cursorclass=DictCursor
+    )
 # =========================
 # NETWORK CHECK
 # =========================
