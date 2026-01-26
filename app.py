@@ -420,4 +420,7 @@ def datasheet(filename):
 # =========================
 if __name__ == "__main__":
     threading.Thread(target=send_daily_summary, daemon=True).start()
-    app.run()
+    # Use environment PORT, default to 5000 if missing
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
