@@ -2,3 +2,4 @@ Flask
 pymysql
 mysql-connector-python
 gunicorn
+pytz
