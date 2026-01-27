@@ -45,7 +45,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 EMAIL_SENDER = "ukzn.component@gmail.com"
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")  # Use an App Password here
+EMAIL_PASSWORD = "uqxm cqrx iley elsx"  # <- Your Gmail App Password directly for testing
 EMAIL_ADMIN = "221008769@stu.ukzn.ac.za"
 
 # =========================
@@ -78,7 +78,7 @@ def is_online():
         return False
 
 # =========================
-# EMAIL FUNCTION (DEBUG VERSION)
+# EMAIL FUNCTION
 # =========================
 def send_admin_email(subject, body):
     try:
@@ -89,9 +89,7 @@ def send_admin_email(subject, body):
         msg.set_content(body)
 
         print(f"[EMAIL DEBUG] Preparing to send '{subject}' to {EMAIL_ADMIN}...")
-
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.set_debuglevel(1)  # <-- Prints all SMTP communication
             print("[EMAIL DEBUG] Connecting to SMTP server...")
             server.starttls()
             print("[EMAIL DEBUG] Logging in...")
@@ -104,8 +102,6 @@ def send_admin_email(subject, body):
         print("[EMAIL ERROR] Authentication failed:", auth_err)
     except smtplib.SMTPRecipientsRefused as recip_err:
         print("[EMAIL ERROR] Recipient refused:", recip_err)
-    except smtplib.SMTPException as smtp_err:
-        print("[EMAIL ERROR] SMTP exception:", smtp_err)
     except Exception as e:
         print("[EMAIL ERROR] General exception:", e)
 
@@ -115,7 +111,7 @@ def send_admin_email(subject, body):
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 23
-    TARGET_MINUTE = 20
+    TARGET_MINUTE = 30
 
     while True:
         try:
