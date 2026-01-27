@@ -12,10 +12,9 @@ import sys
 import threading
 import time
 import socket
-
-# EMAIL IMPORTS
 import smtplib
 from email.message import EmailMessage
+import logging
 
 # =========================
 # RESOURCE PATH (PyInstaller)
@@ -33,9 +32,6 @@ static_dir = resource_path("static")
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
-# =========================
-# SESSION CONFIGURATION
-# =========================
 app.permanent_session_lifetime = timedelta(minutes=3)
 
 # =========================
@@ -43,10 +39,12 @@ app.permanent_session_lifetime = timedelta(minutes=3)
 # =========================
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-
 EMAIL_SENDER = "ukzn.component@gmail.com"
-EMAIL_PASSWORD = "uqxm cqrx iley elsx"  # <- Your Gmail App Password directly for testing
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_ADMIN = "221008769@stu.ukzn.ac.za"
+
+# Enable logging
+logging.basicConfig(level=logging.DEBUG)
 
 # =========================
 # DATABASE CONFIGURATION
@@ -88,13 +86,12 @@ def send_admin_email(subject, body):
         msg["Subject"] = subject
         msg.set_content(body)
 
-        print(f"[EMAIL DEBUG] Preparing to send '{subject}' to {EMAIL_ADMIN}...")
+        print(f"[EMAIL DEBUG] Sending '{subject}' to {EMAIL_ADMIN}...")
+
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            print("[EMAIL DEBUG] Connecting to SMTP server...")
+            server.set_debuglevel(1)  # Very verbose SMTP output
             server.starttls()
-            print("[EMAIL DEBUG] Logging in...")
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            print("[EMAIL DEBUG] Sending email...")
             server.send_message(msg)
             print("[EMAIL DEBUG] Email sent successfully!")
 
@@ -106,12 +103,19 @@ def send_admin_email(subject, body):
         print("[EMAIL ERROR] General exception:", e)
 
 # =========================
+# TEST EMAIL ON STARTUP
+# =========================
+def test_email():
+    print("[EMAIL TEST] Sending test email to verify SMTP connection...")
+    send_admin_email("Test Email", "This is a test email from the Components app.")
+
+# =========================
 # DAILY EMAIL SCHEDULER
 # =========================
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 23
-    TARGET_MINUTE = 32
+    TARGET_MINUTE = 45
 
     while True:
         try:
@@ -133,7 +137,7 @@ def send_daily_summary():
                     SELECT u.name, u.student_number, c.name AS component, l.quantity, l.timestamp
                     FROM logs l
                     JOIN users u ON l.user_id = u.id
-                    JOIN components c ON l.component_id = c.id
+                    JOIN components c ON l.component_id=c.id
                     WHERE DATE(l.timestamp)=%s AND l.emailed=0
                 """, (today,))
                 logs = cursor.fetchall()
@@ -206,7 +210,6 @@ def send_daily_summary():
 
                 conn.commit()
                 conn.close()
-
                 last_sent_date = today
                 print("Daily summary email sent successfully")
 
@@ -215,6 +218,15 @@ def send_daily_summary():
         except Exception as e:
             print("Scheduler error:", e)
             time.sleep(60)
+
+
+if __name__ == "__main__":
+    # Run test email at startup
+    threading.Thread(target=test_email, daemon=True).start()
+    threading.Thread(target=send_daily_summary, daemon=True).start()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
 
 
 # =========================
@@ -459,7 +471,8 @@ def datasheet(filename):
 # RUN
 # =========================
 if __name__ == "__main__":
+    # Run test email at startup
+    threading.Thread(target=test_email, daemon=True).start()
     threading.Thread(target=send_daily_summary, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
