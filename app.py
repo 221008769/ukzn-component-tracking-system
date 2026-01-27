@@ -50,17 +50,26 @@ def parse_dt(dt_str):
 # =========================
 @app.before_request
 def check_session_timeout():
-    max_inactive = 180  # 3 minutes
+    max_inactive = 180  # 3 minutes in seconds
+    now = now_sast()    # timezone-aware SAST datetime
+
     last_activity = session.get("last_activity")
-    now = now_sast()
 
     if last_activity:
-        last_dt = parse_dt(last_activity)
+        # last_activity may be string or datetime
+        if isinstance(last_activity, str):
+            last_dt = parse_dt(last_activity)
+        elif isinstance(last_activity, datetime):
+            last_dt = last_activity if last_activity.tzinfo else last_activity.replace(tzinfo=ZoneInfo("Africa/Johannesburg"))
+        else:
+            last_dt = now  # fallback
+
         elapsed = (now - last_dt).total_seconds()
         if elapsed > max_inactive:
             session.clear()
             return redirect(url_for("login", logout_msg="inactivity"))
 
+    # always store last_activity as string for consistency
     session["last_activity"] = format_dt(now)
 
 # =========================
@@ -199,6 +208,7 @@ def login():
         session["user_id"] = user_id
         session["role"] = role
         session["last_activity"] = format_dt(now_sast())
+
 
         return redirect(url_for("admin" if role=="admin" else "home"))
 
