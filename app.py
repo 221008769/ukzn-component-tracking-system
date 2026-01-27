@@ -88,14 +88,16 @@ def send_admin_email(subject, body):
         msg["Subject"] = subject
         msg.set_content(body)
 
-        print("[EMAIL DEBUG] Connecting via SSL on port 465...")
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+        # Use SSL (works like your test script)
+        with smtplib.SMTP_SSL(SMTP_SERVER, 465) as server:
+            server.set_debuglevel(1)  # optional for debugging
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.send_message(msg)
-            print("[EMAIL DEBUG] Email sent successfully!")
+
+        print(f"[EMAIL DEBUG] Sent '{subject}' to {EMAIL_ADMIN}")
 
     except Exception as e:
-        print("[EMAIL ERROR]", e)
+        print("Email error:", e)
 
 
 # =========================
@@ -103,8 +105,8 @@ def send_admin_email(subject, body):
 # =========================
 def send_daily_summary():
     last_sent_date = None
-    TARGET_HOUR = 0
-    TARGET_MINUTE = 55
+    TARGET_HOUR = 1
+    TARGET_MINUTE = 5
 
     while True:
         try:
