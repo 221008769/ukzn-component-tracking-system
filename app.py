@@ -78,7 +78,7 @@ def is_online():
         return False
 
 # =========================
-# EMAIL FUNCTION
+# EMAIL FUNCTION (DEBUG VERSION)
 # =========================
 def send_admin_email(subject, body):
     try:
@@ -88,13 +88,22 @@ def send_admin_email(subject, body):
         msg["Subject"] = subject
         msg.set_content(body)
 
+        print(f"[EMAIL DEBUG] Preparing to send '{subject}' to {EMAIL_ADMIN}...")
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            print("[EMAIL DEBUG] Connecting to SMTP server...")
             server.starttls()
+            print("[EMAIL DEBUG] Logging in...")
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            print("[EMAIL DEBUG] Sending email...")
             server.send_message(msg)
+            print("[EMAIL DEBUG] Email sent successfully!")
 
+    except smtplib.SMTPAuthenticationError as auth_err:
+        print("[EMAIL ERROR] Authentication failed:", auth_err)
+    except smtplib.SMTPRecipientsRefused as recip_err:
+        print("[EMAIL ERROR] Recipient refused:", recip_err)
     except Exception as e:
-        print("Email error:", e)
+        print("[EMAIL ERROR] General exception:", e)
 
 # =========================
 # DAILY EMAIL SCHEDULER
@@ -102,7 +111,7 @@ def send_admin_email(subject, body):
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 22
-    TARGET_MINUTE = 30
+    TARGET_MINUTE = 50
 
     while True:
         try:
@@ -115,7 +124,6 @@ def send_daily_summary():
                 and last_sent_date != today
             ):
                 print("Sending daily summary email...")
-
 
                 conn = get_db_connection()
                 cursor = conn.cursor()
@@ -207,6 +215,7 @@ def send_daily_summary():
         except Exception as e:
             print("Scheduler error:", e)
             time.sleep(60)
+
 
 
 # =========================
