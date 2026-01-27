@@ -100,14 +100,18 @@ def send_admin_email(subject, body):
 # DAILY EMAIL SCHEDULER
 # =========================
 def send_daily_summary():
-    while True:
-        now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
+    last_sent_date = None
 
-        if now.hour == 17 and now.minute == 0:
-            try:
+    while True:
+        try:
+            now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
+            today = now.strftime("%Y-%m-%d")
+
+            if last_sent_date != today:
+                print("Sending daily summary email...")
+
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                today = now.strftime("%Y-%m-%d")
 
                 # COMPONENTS TAKEN
                 cursor.execute("""
@@ -130,7 +134,10 @@ def send_daily_summary():
                             f"Time: {log['timestamp']}\n\n"
                         )
                     send_admin_email("Daily Component Summary", body)
-                    cursor.execute("UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s", (today,))
+                    cursor.execute(
+                        "UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s",
+                        (today,)
+                    )
 
                 # ITEMS LOANED
                 cursor.execute("""
@@ -151,14 +158,19 @@ def send_daily_summary():
                             f"Loan Date: {loan['loan_date']}\n\n"
                         )
                     send_admin_email("Daily Loan Summary", body)
-                    cursor.execute("UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s", (today,))
+                    cursor.execute(
+                        "UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s",
+                        (today,)
+                    )
 
                 # ITEMS RETURNED
                 cursor.execute("""
                     SELECT u.name, u.student_number, lo.item, lo.return_date
                     FROM loans lo
                     JOIN users u ON lo.user_id = u.id
-                    WHERE DATE(lo.return_date)=%s AND lo.returned=1 AND lo.return_emailed=0
+                    WHERE DATE(lo.return_date)=%s
+                    AND lo.returned=1
+                    AND lo.return_emailed=0
                 """, (today,))
                 returns = cursor.fetchall()
 
@@ -172,16 +184,23 @@ def send_daily_summary():
                             f"Return Date: {r['return_date']}\n\n"
                         )
                     send_admin_email("Daily Return Summary", body)
-                    cursor.execute("UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s", (today,))
+                    cursor.execute(
+                        "UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s",
+                        (today,)
+                    )
 
                 conn.commit()
                 conn.close()
-                time.sleep(60)
 
-            except Exception as e:
-                print("Scheduler error:", e)
+                last_sent_date = today
+                print("Daily summary email sent successfully")
 
-        time.sleep(20)
+            time.sleep(60)
+
+        except Exception as e:
+            print("Scheduler error:", e)
+            time.sleep(60)
+
 
 # =========================
 # LOGIN
