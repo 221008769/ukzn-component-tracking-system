@@ -116,7 +116,7 @@ def test_email():
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 23
-    TARGET_MINUTE = 45
+    TARGET_MINUTE = 49
 
     while True:
         try:
