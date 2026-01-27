@@ -45,7 +45,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 EMAIL_SENDER = "ukzn.component@gmail.com"
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")  # Use an App Password here
 EMAIL_ADMIN = "221008769@stu.ukzn.ac.za"
 
 # =========================
@@ -90,13 +90,11 @@ def send_admin_email(subject, body):
 
         print(f"[EMAIL DEBUG] Preparing to send '{subject}' to {EMAIL_ADMIN}...")
 
-        # Connect and send
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.set_debuglevel(1)  # <-- Prints all SMTP communication
             print("[EMAIL DEBUG] Connecting to SMTP server...")
             server.starttls()
             print("[EMAIL DEBUG] Logging in...")
-            if not EMAIL_PASSWORD:
-                raise ValueError("EMAIL_PASSWORD environment variable is not set!")
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             print("[EMAIL DEBUG] Sending email...")
             server.send_message(msg)
@@ -104,9 +102,10 @@ def send_admin_email(subject, body):
 
     except smtplib.SMTPAuthenticationError as auth_err:
         print("[EMAIL ERROR] Authentication failed:", auth_err)
-        print("Make sure you are using a valid Gmail app password and 2FA is enabled.")
     except smtplib.SMTPRecipientsRefused as recip_err:
         print("[EMAIL ERROR] Recipient refused:", recip_err)
+    except smtplib.SMTPException as smtp_err:
+        print("[EMAIL ERROR] SMTP exception:", smtp_err)
     except Exception as e:
         print("[EMAIL ERROR] General exception:", e)
 
@@ -115,8 +114,8 @@ def send_admin_email(subject, body):
 # =========================
 def send_daily_summary():
     last_sent_date = None
-    TARGET_HOUR = 23
-    TARGET_MINUTE = 0  # Change as needed
+    TARGET_HOUR = 22
+    TARGET_MINUTE = 50
 
     while True:
         try:
