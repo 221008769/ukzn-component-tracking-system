@@ -26,10 +26,11 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-template_dir = resource_path("templates")
-static_dir = resource_path("static")
-
+template_dir = os.path.join(os.path.dirname(__file__), "templates")
+static_dir = os.path.join(os.path.dirname(__file__), "static")
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
+
+
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 app.permanent_session_lifetime = timedelta(minutes=3)
