@@ -101,14 +101,21 @@ def send_admin_email(subject, body):
 # =========================
 def send_daily_summary():
     last_sent_date = None
+    TARGET_HOUR = 21
+    TARGET_MINUTE = 40
 
     while True:
         try:
             now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
             today = now.strftime("%Y-%m-%d")
 
-            if last_sent_date != today:
+            if (
+                now.hour == TARGET_HOUR
+                and now.minute == TARGET_MINUTE
+                and last_sent_date != today
+            ):
                 print("Sending daily summary email...")
+
 
                 conn = get_db_connection()
                 cursor = conn.cursor()
