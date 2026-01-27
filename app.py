@@ -1,3 +1,4 @@
+
 """
 @author: Kiara Chetty
 Desktop version of the Electronic Components Database
@@ -6,14 +7,13 @@ Desktop version of the Electronic Components Database
 from flask import Flask, render_template, request, redirect, session, url_for, send_from_directory
 import pymysql
 from pymysql.cursors import DictCursor
-from datetime import datetime, timedelta
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import os
 import sys
 import threading
 import time
 import socket
-
-# EMAIL IMPORTS
 import smtplib
 from email.message import EmailMessage
 
@@ -34,28 +34,34 @@ app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 # =========================
+# TIMEZONE UTILS
+# =========================
+def now_sast():
+    return datetime.now(ZoneInfo("Africa/Johannesburg"))
+
+def format_dt(dt):
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+def parse_dt(dt_str):
+    return datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo("Africa/Johannesburg"))
+
+# =========================
 # SESSION CONFIG (AUTO LOGOUT)
 # =========================
-SESSION_TIMEOUT = 180  # 3 minutes
-
 @app.before_request
 def check_session_timeout():
-    if "user_id" in session:
-        last_activity = session.get("last_activity")
-        now = datetime.utcnow()
+    max_inactive = 180  # 3 minutes
+    last_activity = session.get("last_activity")
+    now = now_sast()
 
-        if last_activity:
-            elapsed = (now - last_activity).total_seconds()
-            if elapsed > SESSION_TIMEOUT:
-                return redirect(url_for("auto_logout"))
+    if last_activity:
+        last_dt = parse_dt(last_activity)
+        elapsed = (now - last_dt).total_seconds()
+        if elapsed > max_inactive:
+            session.clear()
+            return redirect(url_for("login", logout_msg="inactivity"))
 
-        session["last_activity"] = now
-
-# =========================
-# TIMEZONE (UTC + 2)
-# =========================
-def sa_now():
-    return datetime.utcnow() + timedelta(hours=2)
+    session["last_activity"] = format_dt(now)
 
 # =========================
 # EMAIL CONFIGURATION
@@ -106,12 +112,10 @@ def send_admin_email(subject, body):
         msg["To"] = EMAIL_ADMIN
         msg["Subject"] = subject
         msg.set_content(body)
-
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.send_message(msg)
-
     except Exception as e:
         print("Email error:", e)
 
@@ -120,14 +124,14 @@ def send_admin_email(subject, body):
 # =========================
 def send_daily_summary():
     while True:
-        now = sa_now()
-
-        if now.hour == 15 and now.minute == 15:
+        now = now_sast()
+        if now.hour == 16 and now.minute == 0:
             try:
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 today = now.strftime("%Y-%m-%d")
 
+                # COMPONENTS TAKEN
                 cursor.execute("""
                     SELECT u.name, u.student_number, c.name AS component, l.quantity, l.timestamp
                     FROM logs l
@@ -136,36 +140,26 @@ def send_daily_summary():
                     WHERE DATE(l.timestamp)=%s AND l.emailed=0
                 """, (today,))
                 logs = cursor.fetchall()
-
                 if logs:
                     body = "COMPONENTS TAKEN TODAY\n\n"
                     for log in logs:
-                        body += (
-                            f"Name: {log['name']}\n"
-                            f"Student Number: {log['student_number']}\n"
-                            f"Component: {log['component']}\n"
-                            f"Quantity: {log['quantity']}\n"
-                            f"Time: {log['timestamp']}\n\n"
-                        )
+                        body += f"Name: {log['name']}\nStudent: {log['student_number']}\nComponent: {log['component']}\nQty: {log['quantity']}\nTime: {log['timestamp']}\n\n"
                     send_admin_email("Daily Component Summary", body)
                     cursor.execute("UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s", (today,))
-
                 conn.commit()
                 conn.close()
                 time.sleep(60)
-
             except Exception as e:
                 print("Scheduler error:", e)
-
         time.sleep(20)
 
 # =========================
 # LOGIN
 # =========================
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["GET","POST"])
 def login():
     error = None
-    logout_msg = request.args.get("logout_msg", "")
+    logout_msg = request.args.get("logout_msg","")
 
     if not is_online():
         error = "System is offline. Please check your internet connection."
@@ -180,15 +174,13 @@ def login():
 
     cursor.execute("SELECT * FROM components ORDER BY type, name")
     components = cursor.fetchall()
-
     groups = {}
     for comp in components:
         groups.setdefault(comp["type"] or "Other", []).append(comp)
 
     if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        student_number = request.form.get("student_number", "").strip()
-
+        name = request.form.get("name","").strip()
+        student_number = request.form.get("student_number","").strip()
         cursor.execute("SELECT * FROM users WHERE student_number=%s", (student_number,))
         user = cursor.fetchone()
 
@@ -196,11 +188,9 @@ def login():
             user_id = user["id"]
             role = user["role"] or "student"
         else:
-            role = "admin" if student_number == "000000000" else "student"
-            cursor.execute(
-                "INSERT INTO users (name, student_number, role) VALUES (%s,%s,%s)",
-                (name or "Unknown", student_number, role)
-            )
+            role = "admin" if student_number=="000000000" else "student"
+            cursor.execute("INSERT INTO users (name, student_number, role) VALUES (%s,%s,%s)",
+                           (name or "Unknown", student_number, role))
             conn.commit()
             user_id = cursor.lastrowid
 
@@ -208,9 +198,9 @@ def login():
 
         session["user_id"] = user_id
         session["role"] = role
-        session["last_activity"] = datetime.utcnow()
+        session["last_activity"] = format_dt(now_sast())
 
-        return redirect(url_for("admin" if role == "admin" else "home"))
+        return redirect(url_for("admin" if role=="admin" else "home"))
 
     conn.close()
     return render_template("login.html", groups=groups, error=error, logout_msg=logout_msg)
@@ -228,7 +218,6 @@ def home():
     cursor.execute("SELECT * FROM components")
     components = cursor.fetchall()
     conn.close()
-
     return render_template("index.html", components=components)
 
 # =========================
@@ -236,11 +225,10 @@ def home():
 # =========================
 @app.route("/log", methods=["POST"])
 def log():
-    if session.get("role") != "student":
+    if session.get("role")!="student":
         return redirect(url_for("login"))
 
-    timestamp = sa_now().strftime("%Y-%m-%d %H:%M:%S")
-
+    timestamp = format_dt(now_sast())
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -249,7 +237,6 @@ def log():
     )
     conn.commit()
     conn.close()
-
     return redirect(url_for("home"))
 
 # =========================
@@ -265,5 +252,5 @@ def auto_logout():
 # =========================
 if __name__ == "__main__":
     threading.Thread(target=send_daily_summary, daemon=True).start()
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT",5000))
     app.run(host="0.0.0.0", port=port)
