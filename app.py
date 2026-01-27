@@ -89,10 +89,14 @@ def send_admin_email(subject, body):
         msg.set_content(body)
 
         print(f"[EMAIL DEBUG] Preparing to send '{subject}' to {EMAIL_ADMIN}...")
+
+        # Connect and send
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             print("[EMAIL DEBUG] Connecting to SMTP server...")
             server.starttls()
             print("[EMAIL DEBUG] Logging in...")
+            if not EMAIL_PASSWORD:
+                raise ValueError("EMAIL_PASSWORD environment variable is not set!")
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             print("[EMAIL DEBUG] Sending email...")
             server.send_message(msg)
@@ -100,6 +104,7 @@ def send_admin_email(subject, body):
 
     except smtplib.SMTPAuthenticationError as auth_err:
         print("[EMAIL ERROR] Authentication failed:", auth_err)
+        print("Make sure you are using a valid Gmail app password and 2FA is enabled.")
     except smtplib.SMTPRecipientsRefused as recip_err:
         print("[EMAIL ERROR] Recipient refused:", recip_err)
     except Exception as e:
@@ -110,8 +115,8 @@ def send_admin_email(subject, body):
 # =========================
 def send_daily_summary():
     last_sent_date = None
-    TARGET_HOUR = 22
-    TARGET_MINUTE = 50
+    TARGET_HOUR = 23
+    TARGET_MINUTE = 0  # Change as needed
 
     while True:
         try:
@@ -215,7 +220,6 @@ def send_daily_summary():
         except Exception as e:
             print("Scheduler error:", e)
             time.sleep(60)
-
 
 
 # =========================
@@ -463,3 +467,4 @@ if __name__ == "__main__":
     threading.Thread(target=send_daily_summary, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
