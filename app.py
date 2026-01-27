@@ -2,6 +2,7 @@
 @author: Kiara Chetty
 Desktop version of the Electronic Components Database
 """
+
 from flask import Flask, render_template, request, redirect, session, url_for, send_from_directory
 import pymysql
 from pymysql.cursors import DictCursor
@@ -41,7 +42,7 @@ app.permanent_session_lifetime = timedelta(minutes=3)
 # EMAIL CONFIGURATION
 # =========================
 SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_PORT = 465
 
 EMAIL_SENDER = "ukzn.component@gmail.com"
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
@@ -87,15 +88,15 @@ def send_admin_email(subject, body):
         msg["Subject"] = subject
         msg.set_content(body)
 
-        print(f"[EMAIL DEBUG] Sending '{subject}' to {EMAIL_ADMIN}...")
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
+        print("[EMAIL DEBUG] Connecting via SSL on port 465...")
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.send_message(msg)
-        print("[EMAIL DEBUG] Email sent successfully!")
+            print("[EMAIL DEBUG] Email sent successfully!")
 
     except Exception as e:
         print("[EMAIL ERROR]", e)
+
 
 # =========================
 # DAILY EMAIL SCHEDULER
@@ -103,15 +104,20 @@ def send_admin_email(subject, body):
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 0
-    TARGET_MINUTE = 20
+    TARGET_MINUTE = 40
 
     while True:
         try:
             now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
             today = now.strftime("%Y-%m-%d")
 
-            if now.hour == TARGET_HOUR and now.minute == TARGET_MINUTE and last_sent_date != today:
-                print("[SCHEDULER] Sending daily summary email...")
+            if (
+                now.hour == TARGET_HOUR
+                and now.minute == TARGET_MINUTE
+                and last_sent_date != today
+            ):
+                print("Sending daily summary email...")
+
 
                 conn = get_db_connection()
                 cursor = conn.cursor()
@@ -127,7 +133,6 @@ def send_daily_summary():
                 logs = cursor.fetchall()
 
                 if logs:
-                    print(f"[DEBUG] {len(logs)} COMPONENTS logs found")
                     body = "COMPONENTS TAKEN TODAY\n\n"
                     for log in logs:
                         body += (
@@ -138,10 +143,10 @@ def send_daily_summary():
                             f"Time: {log['timestamp']}\n\n"
                         )
                     send_admin_email("Daily Component Summary", body)
-                    cursor.execute("UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s", (today,))
-                else:
-                    print("[DEBUG] No COMPONENTS logs today, sending empty summary")
-                    send_admin_email("Daily Component Summary", "No components were taken today.")
+                    cursor.execute(
+                        "UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s",
+                        (today,)
+                    )
 
                 # ITEMS LOANED
                 cursor.execute("""
@@ -153,7 +158,6 @@ def send_daily_summary():
                 loans = cursor.fetchall()
 
                 if loans:
-                    print(f"[DEBUG] {len(loans)} LOANS found")
                     body = "ITEMS LOANED TODAY\n\n"
                     for loan in loans:
                         body += (
@@ -163,22 +167,23 @@ def send_daily_summary():
                             f"Loan Date: {loan['loan_date']}\n\n"
                         )
                     send_admin_email("Daily Loan Summary", body)
-                    cursor.execute("UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s", (today,))
-                else:
-                    print("[DEBUG] No LOANS today, sending empty summary")
-                    send_admin_email("Daily Loan Summary", "No loans were made today.")
+                    cursor.execute(
+                        "UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s",
+                        (today,)
+                    )
 
                 # ITEMS RETURNED
                 cursor.execute("""
                     SELECT u.name, u.student_number, lo.item, lo.return_date
                     FROM loans lo
                     JOIN users u ON lo.user_id = u.id
-                    WHERE DATE(lo.return_date)=%s AND lo.returned=1 AND lo.return_emailed=0
+                    WHERE DATE(lo.return_date)=%s
+                    AND lo.returned=1
+                    AND lo.return_emailed=0
                 """, (today,))
                 returns = cursor.fetchall()
 
                 if returns:
-                    print(f"[DEBUG] {len(returns)} RETURNS found")
                     body = "ITEMS RETURNED TODAY\n\n"
                     for r in returns:
                         body += (
@@ -188,21 +193,21 @@ def send_daily_summary():
                             f"Return Date: {r['return_date']}\n\n"
                         )
                     send_admin_email("Daily Return Summary", body)
-                    cursor.execute("UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s", (today,))
-                else:
-                    print("[DEBUG] No RETURNS today, sending empty summary")
-                    send_admin_email("Daily Return Summary", "No items were returned today.")
+                    cursor.execute(
+                        "UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s",
+                        (today,)
+                    )
 
                 conn.commit()
                 conn.close()
 
                 last_sent_date = today
-                print("[SCHEDULER] Daily summary email process completed.")
+                print("Daily summary email sent successfully")
 
             time.sleep(60)
 
         except Exception as e:
-            print("[SCHEDULER ERROR]", e)
+            print("Scheduler error:", e)
             time.sleep(60)
 
 
@@ -214,10 +219,12 @@ def login():
     error = None
     logout_msg = request.args.get("logout_msg", "")
 
+    # OFFLINE CHECK
     if not is_online():
         error = "System is offline. Please check your internet connection."
         return render_template("login.html", groups={}, error=error, logout_msg=logout_msg)
 
+    # DATABASE CHECK
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -227,6 +234,7 @@ def login():
 
     cursor.execute("SELECT * FROM components ORDER BY type, name")
     components = cursor.fetchall()
+
     groups = {}
     for comp in components:
         key = comp["type"] or "Other"
@@ -252,12 +260,16 @@ def login():
             role = user["role"] or "student"
         else:
             role = "admin" if student_number == "000000000" else "student"
-            cursor.execute("INSERT INTO users (name, student_number, role) VALUES (%s,%s,%s)", (name or "Unknown", student_number, role))
+            cursor.execute(
+                "INSERT INTO users (name, student_number, role) VALUES (%s,%s,%s)",
+                (name or "Unknown", student_number, role)
+            )
             conn.commit()
             user_id = cursor.lastrowid
 
         conn.close()
-        session.permanent = True
+
+        session.permanent = True  # Enable permanent session
         session["user_id"] = user_id
         session["name"] = name or "User"
         session["student_number"] = student_number
@@ -267,8 +279,6 @@ def login():
 
     conn.close()
     return render_template("login.html", groups=groups, error=error, logout_msg=logout_msg)
-
-
 
 # =========================
 # HOME
@@ -440,10 +450,9 @@ def datasheet(filename):
     return send_from_directory(static_dir, filename)
 
 # =========================
-# RUN APP
+# RUN
 # =========================
 if __name__ == "__main__":
-    # Start scheduler thread
     threading.Thread(target=send_daily_summary, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
