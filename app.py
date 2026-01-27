@@ -1,4 +1,3 @@
-
 """
 @author: Kiara Chetty
 Desktop version of the Electronic Components Database
@@ -7,13 +6,14 @@ Desktop version of the Electronic Components Database
 from flask import Flask, render_template, request, redirect, session, url_for, send_from_directory
 import pymysql
 from pymysql.cursors import DictCursor
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone, timedelta
 import os
 import sys
 import threading
 import time
 import socket
+
+# EMAIL IMPORTS
 import smtplib
 from email.message import EmailMessage
 
@@ -34,43 +34,9 @@ app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 # =========================
-# TIMEZONE UTILS
+# SESSION CONFIGURATION
 # =========================
-def now_sast():
-    return datetime.now(ZoneInfo("Africa/Johannesburg"))
-
-def format_dt(dt):
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-def parse_dt(dt_str):
-    return datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo("Africa/Johannesburg"))
-
-# =========================
-# SESSION CONFIG (AUTO LOGOUT)
-# =========================
-@app.before_request
-def check_session_timeout():
-    max_inactive = 180  # 3 minutes in seconds
-    now = now_sast()    # timezone-aware SAST datetime
-
-    last_activity = session.get("last_activity")
-
-    if last_activity:
-        # last_activity may be string or datetime
-        if isinstance(last_activity, str):
-            last_dt = parse_dt(last_activity)
-        elif isinstance(last_activity, datetime):
-            last_dt = last_activity if last_activity.tzinfo else last_activity.replace(tzinfo=ZoneInfo("Africa/Johannesburg"))
-        else:
-            last_dt = now  # fallback
-
-        elapsed = (now - last_dt).total_seconds()
-        if elapsed > max_inactive:
-            session.clear()
-            return redirect(url_for("login", logout_msg="inactivity"))
-
-    # always store last_activity as string for consistency
-    session["last_activity"] = format_dt(now)
+app.permanent_session_lifetime = timedelta(minutes=3)
 
 # =========================
 # EMAIL CONFIGURATION
@@ -121,10 +87,12 @@ def send_admin_email(subject, body):
         msg["To"] = EMAIL_ADMIN
         msg["Subject"] = subject
         msg.set_content(body)
+
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.send_message(msg)
+
     except Exception as e:
         print("Email error:", e)
 
@@ -133,8 +101,9 @@ def send_admin_email(subject, body):
 # =========================
 def send_daily_summary():
     while True:
-        now = now_sast()
-        if now.hour == 16 and now.minute == 0:
+        now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
+
+        if now.hour == 17 and now.minute == 0:
             try:
                 conn = get_db_connection()
                 cursor = conn.cursor()
@@ -149,31 +118,85 @@ def send_daily_summary():
                     WHERE DATE(l.timestamp)=%s AND l.emailed=0
                 """, (today,))
                 logs = cursor.fetchall()
+
                 if logs:
                     body = "COMPONENTS TAKEN TODAY\n\n"
                     for log in logs:
-                        body += f"Name: {log['name']}\nStudent: {log['student_number']}\nComponent: {log['component']}\nQty: {log['quantity']}\nTime: {log['timestamp']}\n\n"
+                        body += (
+                            f"Name: {log['name']}\n"
+                            f"Student Number: {log['student_number']}\n"
+                            f"Component: {log['component']}\n"
+                            f"Quantity: {log['quantity']}\n"
+                            f"Time: {log['timestamp']}\n\n"
+                        )
                     send_admin_email("Daily Component Summary", body)
                     cursor.execute("UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s", (today,))
+
+                # ITEMS LOANED
+                cursor.execute("""
+                    SELECT u.name, u.student_number, lo.item, lo.loan_date
+                    FROM loans lo
+                    JOIN users u ON lo.user_id = u.id
+                    WHERE DATE(lo.loan_date)=%s AND lo.loan_emailed=0
+                """, (today,))
+                loans = cursor.fetchall()
+
+                if loans:
+                    body = "ITEMS LOANED TODAY\n\n"
+                    for loan in loans:
+                        body += (
+                            f"Name: {loan['name']}\n"
+                            f"Student Number: {loan['student_number']}\n"
+                            f"Item: {loan['item']}\n"
+                            f"Loan Date: {loan['loan_date']}\n\n"
+                        )
+                    send_admin_email("Daily Loan Summary", body)
+                    cursor.execute("UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s", (today,))
+
+                # ITEMS RETURNED
+                cursor.execute("""
+                    SELECT u.name, u.student_number, lo.item, lo.return_date
+                    FROM loans lo
+                    JOIN users u ON lo.user_id = u.id
+                    WHERE DATE(lo.return_date)=%s AND lo.returned=1 AND lo.return_emailed=0
+                """, (today,))
+                returns = cursor.fetchall()
+
+                if returns:
+                    body = "ITEMS RETURNED TODAY\n\n"
+                    for r in returns:
+                        body += (
+                            f"Name: {r['name']}\n"
+                            f"Student Number: {r['student_number']}\n"
+                            f"Item: {r['item']}\n"
+                            f"Return Date: {r['return_date']}\n\n"
+                        )
+                    send_admin_email("Daily Return Summary", body)
+                    cursor.execute("UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s", (today,))
+
                 conn.commit()
                 conn.close()
                 time.sleep(60)
+
             except Exception as e:
                 print("Scheduler error:", e)
+
         time.sleep(20)
 
 # =========================
 # LOGIN
 # =========================
-@app.route("/", methods=["GET","POST"])
+@app.route("/", methods=["GET", "POST"])
 def login():
     error = None
-    logout_msg = request.args.get("logout_msg","")
+    logout_msg = request.args.get("logout_msg", "")
 
+    # OFFLINE CHECK
     if not is_online():
         error = "System is offline. Please check your internet connection."
         return render_template("login.html", groups={}, error=error, logout_msg=logout_msg)
 
+    # DATABASE CHECK
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -183,34 +206,48 @@ def login():
 
     cursor.execute("SELECT * FROM components ORDER BY type, name")
     components = cursor.fetchall()
+
     groups = {}
     for comp in components:
-        groups.setdefault(comp["type"] or "Other", []).append(comp)
+        key = comp["type"] or "Other"
+        groups.setdefault(key, []).append(comp)
 
     if request.method == "POST":
-        name = request.form.get("name","").strip()
-        student_number = request.form.get("student_number","").strip()
+        name = request.form.get("name", "").strip()
+        student_number = request.form.get("student_number", "").strip()
+
+        if not (student_number.isdigit() and len(student_number) == 9) and student_number != "000000000":
+            conn.close()
+            error = "Student number must be exactly 9 digits (or the admin ID)."
+            return render_template("login.html", groups=groups, error=error, logout_msg=logout_msg)
+
         cursor.execute("SELECT * FROM users WHERE student_number=%s", (student_number,))
         user = cursor.fetchone()
 
         if user:
             user_id = user["id"]
+            if user["name"] != name and name:
+                cursor.execute("UPDATE users SET name=%s WHERE id=%s", (name, user_id))
+                conn.commit()
             role = user["role"] or "student"
         else:
-            role = "admin" if student_number=="000000000" else "student"
-            cursor.execute("INSERT INTO users (name, student_number, role) VALUES (%s,%s,%s)",
-                           (name or "Unknown", student_number, role))
+            role = "admin" if student_number == "000000000" else "student"
+            cursor.execute(
+                "INSERT INTO users (name, student_number, role) VALUES (%s,%s,%s)",
+                (name or "Unknown", student_number, role)
+            )
             conn.commit()
             user_id = cursor.lastrowid
 
         conn.close()
 
+        session.permanent = True  # Enable permanent session
         session["user_id"] = user_id
+        session["name"] = name or "User"
+        session["student_number"] = student_number
         session["role"] = role
-        session["last_activity"] = format_dt(now_sast())
 
-
-        return redirect(url_for("admin" if role=="admin" else "home"))
+        return redirect(url_for("admin" if role == "admin" else "home"))
 
     conn.close()
     return render_template("login.html", groups=groups, error=error, logout_msg=logout_msg)
@@ -225,9 +262,20 @@ def home():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM components")
+
+    query = request.args.get("search", "").strip()
+
+    if query:
+        cursor.execute(
+            "SELECT * FROM components WHERE name LIKE %s OR description LIKE %s",
+            (f"%{query}%", f"%{query}%")
+        )
+    else:
+        cursor.execute("SELECT * FROM components")
+
     components = cursor.fetchall()
     conn.close()
+
     return render_template("index.html", components=components)
 
 # =========================
@@ -235,32 +283,148 @@ def home():
 # =========================
 @app.route("/log", methods=["POST"])
 def log():
-    if session.get("role")!="student":
+    if session.get("role") != "student":
         return redirect(url_for("login"))
 
-    timestamp = format_dt(now_sast())
+    component_id = request.form.get("component_id")
+    quantity = int(request.form.get("quantity", 0))
+    timestamp = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")  # UTC+2
+
     conn = get_db_connection()
     cursor = conn.cursor()
+
     cursor.execute(
         "INSERT INTO logs (user_id, component_id, quantity, timestamp) VALUES (%s,%s,%s,%s)",
-        (session["user_id"], request.form.get("component_id"), int(request.form.get("quantity")), timestamp)
+        (session["user_id"], component_id, quantity, timestamp)
     )
     conn.commit()
     conn.close()
+
     return redirect(url_for("home"))
 
 # =========================
-# AUTO LOGOUT
+# LOANS
 # =========================
+@app.route("/loan", methods=["GET", "POST"])
+def loan():
+    if session.get("role") != "student":
+        return redirect(url_for("login"))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if request.method == "POST":
+        item = request.form.get("item")
+        now = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")  # UTC+2
+
+        cursor.execute(
+            "INSERT INTO loans (user_id, item, loan_date) VALUES (%s,%s,%s)",
+            (session["user_id"], item, now)
+        )
+        conn.commit()
+
+    cursor.execute("SELECT * FROM loans WHERE user_id=%s", (session["user_id"],))
+    loans = cursor.fetchall()
+
+    conn.close()
+    return render_template("loan.html", loans=loans)
+
+# =========================
+# RETURN LOAN
+# =========================
+@app.route("/return_loan/<int:loan_id>")
+def return_loan(loan_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    return_time = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")  # UTC+2
+
+    cursor.execute(
+        "UPDATE loans SET returned=1, return_date=%s WHERE id=%s",
+        (return_time, loan_id)
+    )
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for("loan"))
+
+# =========================
+# ADMIN
+# =========================
+@app.route("/admin")
+def admin():
+    if session.get("role") != "admin":
+        return redirect(url_for("login"))
+
+    search = request.args.get("search", "").strip()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if search:
+        cursor.execute("""
+            SELECT u.name, u.student_number, c.name AS component_name, l.quantity, l.timestamp
+            FROM logs l
+            JOIN users u ON l.user_id=u.id
+            JOIN components c ON l.component_id=c.id
+            WHERE u.student_number LIKE %s OR u.name LIKE %s
+            ORDER BY l.timestamp DESC
+        """, (f"%{search}%", f"%{search}%"))
+    else:
+        cursor.execute("""
+            SELECT u.name, u.student_number, c.name AS component_name, l.quantity, l.timestamp
+            FROM logs l
+            JOIN users u ON l.user_id=u.id
+            JOIN components c ON l.component_id=c.id
+            ORDER BY l.timestamp DESC
+        """)
+
+    logs = cursor.fetchall()
+
+    if search:
+        cursor.execute("""
+            SELECT u.name, u.student_number, lo.item, lo.loan_date, lo.returned, lo.return_date
+            FROM loans lo
+            JOIN users u ON lo.user_id=u.id
+            WHERE u.student_number LIKE %s OR u.name LIKE %s
+            ORDER BY lo.loan_date DESC
+        """, (f"%{search}%", f"%{search}%"))
+    else:
+        cursor.execute("""
+            SELECT u.name, u.student_number, lo.item, lo.loan_date, lo.returned, lo.return_date
+            FROM loans lo
+            JOIN users u ON lo.user_id=u.id
+            ORDER BY lo.loan_date DESC
+        """)
+
+    loan_logs = cursor.fetchall()
+    conn.close()
+
+    return render_template("admin.html", logs=logs, loan_logs=loan_logs, search=search)
+
+# =========================
+# LOGOUT
+# =========================
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login", logout_msg="manual"))
+
 @app.route("/auto_logout")
 def auto_logout():
     session.clear()
     return redirect(url_for("login", logout_msg="inactivity"))
 
 # =========================
+# DATASHEETS
+# =========================
+@app.route("/datasheet/<path:filename>")
+def datasheet(filename):
+    return send_from_directory(static_dir, filename)
+
+# =========================
 # RUN
 # =========================
 if __name__ == "__main__":
     threading.Thread(target=send_daily_summary, daemon=True).start()
-    port = int(os.environ.get("PORT",5000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

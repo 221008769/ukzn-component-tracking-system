@@ -85,11 +85,11 @@ function resetLogoutTimer() {
     clearTimeout(logoutTimer);
     logoutTimer = setTimeout(() => {
         window.location.href = "{{ url_for('auto_logout') }}";
-    }, 180000); // 3 minutes
+    }, 180000);
 }
 
-["mousemove", "keydown", "click", "scroll"].forEach(event =>
-    document.addEventListener(event, resetLogoutTimer)
+['mousemove','keydown','click','scroll'].forEach(e =>
+    document.addEventListener(e, resetLogoutTimer)
 );
 
 resetLogoutTimer();
