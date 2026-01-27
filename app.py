@@ -122,7 +122,7 @@ def send_daily_summary():
     while True:
         now = sa_now()
 
-        if now.hour == 15 and now.minute == 5:
+        if now.hour == 15 and now.minute == 15:
             try:
                 conn = get_db_connection()
                 cursor = conn.cursor()
