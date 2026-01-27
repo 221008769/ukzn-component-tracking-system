@@ -45,7 +45,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
 
 EMAIL_SENDER = "ukzn.component@gmail.com"
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+EMAIL_PASSWORD = "bmnsyfhhqkwlpnbj"  # your Gmail app password without spaces
 EMAIL_ADMIN = "221008769@stu.ukzn.ac.za"
 
 # =========================
@@ -106,7 +106,7 @@ def send_admin_email(subject, body):
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 1
-    TARGET_MINUTE = 5
+    TARGET_MINUTE = 15
 
     while True:
         try:
