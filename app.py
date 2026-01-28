@@ -10,12 +10,9 @@ from datetime import datetime, timezone, timedelta
 import os
 import sys
 import threading
-import time
 import socket
 
-# EMAIL IMPORTS
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
+
 
 # =========================
 # RESOURCE PATH (PyInstaller)
@@ -38,12 +35,6 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 # =========================
 app.permanent_session_lifetime = timedelta(minutes=3)
 
-# =========================
-# EMAIL CONFIGURATION
-# =========================
-EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "ukzn.component@gmail.com")
-EMAIL_ADMIN = os.environ.get("EMAIL_ADMIN", "221008769@stu.ukzn.ac.za")
-SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")  # must be set on Railway
 
 # =========================
 # DATABASE CONFIGURATION
@@ -74,138 +65,6 @@ def is_online():
     except OSError:
         return False
 
-# =========================
-# EMAIL FUNCTION (SendGrid)
-# =========================
-def send_admin_email(subject, body):
-    try:
-        message = Mail(
-            from_email=os.environ.get("EMAIL_SENDER", "ukzn.component@gmail.com"),
-            to_emails=os.environ.get("EMAIL_ADMIN", "221008769@stu.ukzn.ac.za"),
-            subject=subject,
-            plain_text_content=body
-        )
-        sg = SendGridAPIClient(os.environ.get("SENDGRID_API_KEY"))
-        response = sg.send(message)
-        print(f"[SENDGRID] Email sent! Status code: {response.status_code}")
-
-    except Exception as e:
-        print(f"[SENDGRID] Email error: {e}")
-
-# =========================
-# DAILY EMAIL SCHEDULER
-# =========================
-def send_daily_summary():
-    last_sent_date = None
-    TARGET_HOUR = 3
-    TARGET_MINUTE = 27
-
-    while True:
-        try:
-            now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
-            today = now.strftime("%Y-%m-%d")
-
-            if (
-                now.hour == TARGET_HOUR
-                and now.minute == TARGET_MINUTE
-                and last_sent_date != today
-            ):
-                print("Sending daily summary email...")
-
-                conn = get_db_connection()
-                cursor = conn.cursor()
-
-                # COMPONENTS TAKEN
-                cursor.execute("""
-                    SELECT u.name, u.student_number, c.name AS component, l.quantity, l.timestamp
-                    FROM logs l
-                    JOIN users u ON l.user_id = u.id
-                    JOIN components c ON l.component_id = c.id
-                    WHERE DATE(l.timestamp)=%s AND l.emailed=0
-                """, (today,))
-                logs = cursor.fetchall()
-
-                if logs:
-                    body = "COMPONENTS TAKEN TODAY\n\n"
-                    for log in logs:
-                        body += (
-                            f"Name: {log['name']}\n"
-                            f"Student Number: {log['student_number']}\n"
-                            f"Component: {log['component']}\n"
-                            f"Quantity: {log['quantity']}\n"
-                            f"Time: {log['timestamp']}\n\n"
-                        )
-                    send_admin_email("Daily Component Summary", body)
-                    cursor.execute(
-                        "UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s",
-                        (today,)
-                    )
-
-                # ITEMS LOANED
-                cursor.execute("""
-                    SELECT u.name, u.student_number, lo.item, lo.loan_date
-                    FROM loans lo
-                    JOIN users u ON lo.user_id = u.id
-                    WHERE DATE(lo.loan_date)=%s AND lo.loan_emailed=0
-                """, (today,))
-                loans = cursor.fetchall()
-
-                if loans:
-                    body = "ITEMS LOANED TODAY\n\n"
-                    for loan in loans:
-                        body += (
-                            f"Name: {loan['name']}\n"
-                            f"Student Number: {loan['student_number']}\n"
-                            f"Item: {loan['item']}\n"
-                            f"Loan Date: {loan['loan_date']}\n\n"
-                        )
-                    send_admin_email("Daily Loan Summary", body)
-                    cursor.execute(
-                        "UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s",
-                        (today,)
-                    )
-
-                # ITEMS RETURNED
-                cursor.execute("""
-                    SELECT u.name, u.student_number, lo.item, lo.return_date
-                    FROM loans lo
-                    JOIN users u ON lo.user_id = u.id
-                    WHERE DATE(lo.return_date)=%s
-                    AND lo.returned=1
-                    AND lo.return_emailed=0
-                """, (today,))
-                returns = cursor.fetchall()
-
-                if returns:
-                    body = "ITEMS RETURNED TODAY\n\n"
-                    for r in returns:
-                        body += (
-                            f"Name: {r['name']}\n"
-                            f"Student Number: {r['student_number']}\n"
-                            f"Item: {r['item']}\n"
-                            f"Return Date: {r['return_date']}\n\n"
-                        )
-                    send_admin_email("Daily Return Summary", body)
-                    cursor.execute(
-                        "UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s",
-                        (today,)
-                    )
-
-                conn.commit()
-                conn.close()
-                last_sent_date = today
-                print("Daily summary email sent successfully")
-
-            time.sleep(60)
-
-        except Exception as e:
-            print("Scheduler error:", e)
-            time.sleep(60)
-
-@app.route("/test_sendgrid")
-def test_sendgrid():
-    send_admin_email("Test Email", "This is a test from SendGrid.")
-    return "Check your email!"
 
 # =========================
 # LOGIN
@@ -437,6 +296,5 @@ def datasheet(filename):
 # RUN
 # =========================
 if __name__ == "__main__":
-    threading.Thread(target=send_daily_summary, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
