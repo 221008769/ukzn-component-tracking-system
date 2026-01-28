@@ -13,9 +13,7 @@ import threading
 import time
 import socket
 
-# =========================
-# SENDGRID EMAIL IMPORTS
-# =========================
+# EMAIL IMPORTS
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
@@ -41,11 +39,11 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 app.permanent_session_lifetime = timedelta(minutes=3)
 
 # =========================
-# EMAIL CONFIGURATION (SENDGRID)
+# EMAIL CONFIGURATION
 # =========================
-SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
-EMAIL_SENDER = os.environ.get("EMAIL_SENDER")   # ukzn.component@gmail.com
-EMAIL_ADMIN = os.environ.get("EMAIL_ADMIN")     # admin email
+EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "ukzn.component@gmail.com")
+EMAIL_ADMIN = os.environ.get("EMAIL_ADMIN", "221008769@stu.ukzn.ac.za")
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")  # must be set on Railway
 
 # =========================
 # DATABASE CONFIGURATION
@@ -77,7 +75,7 @@ def is_online():
         return False
 
 # =========================
-# EMAIL FUNCTION (SENDGRID)
+# EMAIL FUNCTION (SendGrid)
 # =========================
 def send_admin_email(subject, body):
     try:
@@ -87,14 +85,11 @@ def send_admin_email(subject, body):
             subject=subject,
             plain_text_content=body
         )
-
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         response = sg.send(message)
-
-        print(f"[SENDGRID] Email sent ({response.status_code})")
-
+        print(f"[EMAIL DEBUG] Sent '{subject}' via SendGrid, status {response.status_code}")
     except Exception as e:
-        print("[SENDGRID ERROR]", e)
+        print("Email error:", e)
 
 # =========================
 # DAILY EMAIL SCHEDULER
@@ -102,11 +97,11 @@ def send_admin_email(subject, body):
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 3
-    TARGET_MINUTE = 0
+    TARGET_MINUTE = 15
 
     while True:
         try:
-            now = datetime.now(timezone.utc) + timedelta(hours=2)
+            now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
             today = now.strftime("%Y-%m-%d")
 
             if (
@@ -140,7 +135,10 @@ def send_daily_summary():
                             f"Time: {log['timestamp']}\n\n"
                         )
                     send_admin_email("Daily Component Summary", body)
-                    cursor.execute("UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s", (today,))
+                    cursor.execute(
+                        "UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s",
+                        (today,)
+                    )
 
                 # ITEMS LOANED
                 cursor.execute("""
@@ -161,7 +159,10 @@ def send_daily_summary():
                             f"Loan Date: {loan['loan_date']}\n\n"
                         )
                     send_admin_email("Daily Loan Summary", body)
-                    cursor.execute("UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s", (today,))
+                    cursor.execute(
+                        "UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s",
+                        (today,)
+                    )
 
                 # ITEMS RETURNED
                 cursor.execute("""
@@ -185,7 +186,8 @@ def send_daily_summary():
                         )
                     send_admin_email("Daily Return Summary", body)
                     cursor.execute(
-                        "UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s", (today,)
+                        "UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s",
+                        (today,)
                     )
 
                 conn.commit()
@@ -199,7 +201,6 @@ def send_daily_summary():
             print("Scheduler error:", e)
             time.sleep(60)
 
-
 # =========================
 # LOGIN
 # =========================
@@ -208,12 +209,10 @@ def login():
     error = None
     logout_msg = request.args.get("logout_msg", "")
 
-    # OFFLINE CHECK
     if not is_online():
         error = "System is offline. Please check your internet connection."
         return render_template("login.html", groups={}, error=error, logout_msg=logout_msg)
 
-    # DATABASE CHECK
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -257,13 +256,11 @@ def login():
             user_id = cursor.lastrowid
 
         conn.close()
-
-        session.permanent = True  # Enable permanent session
+        session.permanent = True
         session["user_id"] = user_id
         session["name"] = name or "User"
         session["student_number"] = student_number
         session["role"] = role
-
         return redirect(url_for("admin" if role == "admin" else "home"))
 
     conn.close()
@@ -292,7 +289,6 @@ def home():
 
     components = cursor.fetchall()
     conn.close()
-
     return render_template("index.html", components=components)
 
 # =========================
@@ -305,18 +301,16 @@ def log():
 
     component_id = request.form.get("component_id")
     quantity = int(request.form.get("quantity", 0))
-    timestamp = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")  # UTC+2
+    timestamp = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
     cursor.execute(
         "INSERT INTO logs (user_id, component_id, quantity, timestamp) VALUES (%s,%s,%s,%s)",
         (session["user_id"], component_id, quantity, timestamp)
     )
     conn.commit()
     conn.close()
-
     return redirect(url_for("home"))
 
 # =========================
@@ -332,8 +326,7 @@ def loan():
 
     if request.method == "POST":
         item = request.form.get("item")
-        now = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")  # UTC+2
-
+        now = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute(
             "INSERT INTO loans (user_id, item, loan_date) VALUES (%s,%s,%s)",
             (session["user_id"], item, now)
@@ -342,7 +335,6 @@ def loan():
 
     cursor.execute("SELECT * FROM loans WHERE user_id=%s", (session["user_id"],))
     loans = cursor.fetchall()
-
     conn.close()
     return render_template("loan.html", loans=loans)
 
@@ -354,15 +346,13 @@ def return_loan(loan_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    return_time = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")  # UTC+2
-
+    return_time = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute(
         "UPDATE loans SET returned=1, return_date=%s WHERE id=%s",
         (return_time, loan_id)
     )
     conn.commit()
     conn.close()
-
     return redirect(url_for("loan"))
 
 # =========================
@@ -415,7 +405,6 @@ def admin():
 
     loan_logs = cursor.fetchall()
     conn.close()
-
     return render_template("admin.html", logs=logs, loan_logs=loan_logs, search=search)
 
 # =========================
