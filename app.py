@@ -80,16 +80,17 @@ def is_online():
 def send_admin_email(subject, body):
     try:
         message = Mail(
-            from_email=EMAIL_SENDER,
-            to_emails=EMAIL_ADMIN,
+            from_email=os.environ.get("EMAIL_SENDER", "ukzn.component@gmail.com"),
+            to_emails=os.environ.get("EMAIL_ADMIN", "221008769@stu.ukzn.ac.za"),
             subject=subject,
             plain_text_content=body
         )
-        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        sg = SendGridAPIClient(os.environ.get("SENDGRID_API_KEY"))
         response = sg.send(message)
-        print(f"[EMAIL DEBUG] Sent '{subject}' via SendGrid, status {response.status_code}")
+        print(f"[SENDGRID] Email sent! Status code: {response.status_code}")
+
     except Exception as e:
-        print("Email error:", e)
+        print(f"[SENDGRID] Email error: {e}")
 
 # =========================
 # DAILY EMAIL SCHEDULER
@@ -200,6 +201,11 @@ def send_daily_summary():
         except Exception as e:
             print("Scheduler error:", e)
             time.sleep(60)
+
+@app.route("/test_sendgrid")
+def test_sendgrid():
+    send_admin_email("Test Email", "This is a test from SendGrid.")
+    return "Check your email!"
 
 # =========================
 # LOGIN
