@@ -98,7 +98,7 @@ def send_admin_email(subject, body):
 def send_daily_summary():
     last_sent_date = None
     TARGET_HOUR = 3
-    TARGET_MINUTE = 15
+    TARGET_MINUTE = 27
 
     while True:
         try:
