@@ -3,3 +3,4 @@ pymysql
 mysql-connector-python
 gunicorn
 pytz
+sendgrid

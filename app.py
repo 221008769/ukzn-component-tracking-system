@@ -13,9 +13,11 @@ import threading
 import time
 import socket
 
-# EMAIL IMPORTS
-import smtplib
-from email.message import EmailMessage
+# =========================
+# SENDGRID EMAIL IMPORTS
+# =========================
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 # =========================
 # RESOURCE PATH (PyInstaller)
@@ -39,14 +41,11 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 app.permanent_session_lifetime = timedelta(minutes=3)
 
 # =========================
-# EMAIL CONFIGURATION
+# EMAIL CONFIGURATION (SENDGRID)
 # =========================
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
-
-EMAIL_SENDER = "ukzn.component@gmail.com"
-EMAIL_PASSWORD = "bmnsyfhhqkwlpnbj"  # your Gmail app password without spaces
-EMAIL_ADMIN = "221008769@stu.ukzn.ac.za"
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
+EMAIL_SENDER = os.environ.get("EMAIL_SENDER")   # ukzn.component@gmail.com
+EMAIL_ADMIN = os.environ.get("EMAIL_ADMIN")     # admin email
 
 # =========================
 # DATABASE CONFIGURATION
@@ -78,39 +77,36 @@ def is_online():
         return False
 
 # =========================
-# EMAIL FUNCTION
+# EMAIL FUNCTION (SENDGRID)
 # =========================
 def send_admin_email(subject, body):
     try:
-        msg = EmailMessage()
-        msg["From"] = EMAIL_SENDER
-        msg["To"] = EMAIL_ADMIN
-        msg["Subject"] = subject
-        msg.set_content(body)
+        message = Mail(
+            from_email=EMAIL_SENDER,
+            to_emails=EMAIL_ADMIN,
+            subject=subject,
+            plain_text_content=body
+        )
 
-        # Use SSL (works like your test script)
-        with smtplib.SMTP_SSL(SMTP_SERVER, 465) as server:
-            server.set_debuglevel(1)  # optional for debugging
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            server.send_message(msg)
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
 
-        print(f"[EMAIL DEBUG] Sent '{subject}' to {EMAIL_ADMIN}")
+        print(f"[SENDGRID] Email sent ({response.status_code})")
 
     except Exception as e:
-        print("Email error:", e)
-
+        print("[SENDGRID ERROR]", e)
 
 # =========================
 # DAILY EMAIL SCHEDULER
 # =========================
 def send_daily_summary():
     last_sent_date = None
-    TARGET_HOUR = 1
-    TARGET_MINUTE = 15
+    TARGET_HOUR = 3
+    TARGET_MINUTE = 0
 
     while True:
         try:
-            now = datetime.now(timezone.utc) + timedelta(hours=2)  # UTC+2
+            now = datetime.now(timezone.utc) + timedelta(hours=2)
             today = now.strftime("%Y-%m-%d")
 
             if (
@@ -119,7 +115,6 @@ def send_daily_summary():
                 and last_sent_date != today
             ):
                 print("Sending daily summary email...")
-
 
                 conn = get_db_connection()
                 cursor = conn.cursor()
@@ -145,10 +140,7 @@ def send_daily_summary():
                             f"Time: {log['timestamp']}\n\n"
                         )
                     send_admin_email("Daily Component Summary", body)
-                    cursor.execute(
-                        "UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s",
-                        (today,)
-                    )
+                    cursor.execute("UPDATE logs SET emailed=1 WHERE DATE(timestamp)=%s", (today,))
 
                 # ITEMS LOANED
                 cursor.execute("""
@@ -169,10 +161,7 @@ def send_daily_summary():
                             f"Loan Date: {loan['loan_date']}\n\n"
                         )
                     send_admin_email("Daily Loan Summary", body)
-                    cursor.execute(
-                        "UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s",
-                        (today,)
-                    )
+                    cursor.execute("UPDATE loans SET loan_emailed=1 WHERE DATE(loan_date)=%s", (today,))
 
                 # ITEMS RETURNED
                 cursor.execute("""
@@ -196,13 +185,11 @@ def send_daily_summary():
                         )
                     send_admin_email("Daily Return Summary", body)
                     cursor.execute(
-                        "UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s",
-                        (today,)
+                        "UPDATE loans SET return_emailed=1 WHERE DATE(return_date)=%s", (today,)
                     )
 
                 conn.commit()
                 conn.close()
-
                 last_sent_date = today
                 print("Daily summary email sent successfully")
 
